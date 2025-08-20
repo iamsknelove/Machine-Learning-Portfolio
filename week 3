@@ -1,0 +1,54 @@
+import csv
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score
+
+dataset = []
+with open("w1.csv", "r", encoding="utf-8") as file:
+    reader = csv.reader(file)
+    for row in reader:
+        dataset.append(row)
+
+dataset = dataset[1:]
+drop_cols = [1, 11, 12, 20]
+
+features, labels = [], []
+for row in dataset:
+    values = [float(row[i]) for i in range(len(row) - 1) if i not in drop_cols]
+    features.append(values)
+    labels.append(int(row[-1]))
+
+X_train, X_test, y_train, y_test = train_test_split(
+    features, labels, test_size=0.2, stratify=labels, random_state=42
+)
+
+knn5 = KNeighborsClassifier(n_neighbors=5)
+knn21 = KNeighborsClassifier(n_neighbors=21)
+
+knn5.fit(X_train, y_train)
+knn21.fit(X_train, y_train)
+
+pred5 = knn5.predict(X_test)
+pred21 = knn21.predict(X_test)
+
+acc5 = accuracy_score(y_test, pred5)
+acc21 = accuracy_score(y_test, pred21)
+
+print("Accuracy (k=5):", acc5)
+print("Accuracy (k=21):", acc21)
+
+sample = [0.1, 2.2, 0.03, 1.4, 0.05, 0.6, 0.07, 1.08, 1.9, 0.11,
+          8.012, 0.13, 0.014, 6.15, 0.016, 4.17, 0.018, 0.019]
+
+if acc5 >= acc21:
+    model, k_value = knn5, 5
+else:
+    model, k_value = knn21, 21
+
+result = model.predict([sample])
+
+if result[0] == 1:
+    print(f"{sample} → Drinkable (k={k_value})")
+else:
+    print(f"{sample} → Not Drinkable (k={k_value})")
