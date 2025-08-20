@@ -1,0 +1,76 @@
+!pip install pyspark gdown seaborn
+
+from pyspark.sql import SparkSession
+from pyspark.ml.feature import VectorAssembler, StringIndexer
+from pyspark.ml.classification import DecisionTreeClassifier, LogisticRegression, OneVsRest
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import gdown
+from google.colab import drive
+
+spark = SparkSession.builder.master("local[*]").appName("IrisClassification").getOrCreate()
+drive.mount("/content/drive")
+
+iris_path = "/content/drive/My Drive/Colab Notebooks/bezdekIris.data"
+
+try:
+    iris_df = spark.read.csv(iris_path, header=False, inferSchema=True)\
+                .toDF("sepal_length", "sepal_width", "petal_length", "petal_width", "class")
+except:
+    file_id = "1beqLR153BE6D0cW7hP4RhDxjiZqPnZ6A"
+    gdown.download(f"https://drive.google.com/uc?id={file_id}", "iris.data", quiet=False)
+    iris_df = spark.read.csv("iris.data", header=False, inferSchema=True)\
+                .toDF("sepal_length", "sepal_width", "petal_length", "petal_width", "class")
+
+assembler = VectorAssembler(
+    inputCols=["sepal_length", "sepal_width", "petal_length", "petal_width"],
+    outputCol="features"
+)
+iris_features = assembler.transform(iris_df).drop("sepal_length", "sepal_width", "petal_length", "petal_width")
+
+indexer = StringIndexer(inputCol="class", outputCol="labelIndex")
+iris_ready = indexer.fit(iris_features).transform(iris_features)
+
+train_set, test_set = iris_ready.randomSplit([0.7, 0.3], seed=42)
+
+dt_model = DecisionTreeClassifier(
+    featuresCol="features", 
+    labelCol="labelIndex", 
+    impurity="entropy", 
+    maxDepth=4
+).fit(train_set)
+
+dt_preds = dt_model.transform(test_set)
+
+evaluator = MulticlassClassificationEvaluator(
+    labelCol="labelIndex", 
+    predictionCol="prediction", 
+    metricName="accuracy"
+)
+dt_acc = evaluator.evaluate(dt_preds)
+print("Decision Tree Accuracy:", dt_acc)
+
+lr = LogisticRegression(maxIter=100, featuresCol="features", labelCol="labelIndex")
+ovr = OneVsRest(classifier=lr, featuresCol="features", labelCol="labelIndex")
+ovr_model = ovr.fit(train_set)
+ovr_preds = ovr_model.transform(test_set)
+
+ovr_acc = evaluator.evaluate(ovr_preds)
+print("Logistic Regression (OvR) Accuracy:", ovr_acc)
+
+pandas_preds = ovr_preds.select("labelIndex", "prediction").toPandas()
+conf_matrix = pd.crosstab(
+    pandas_preds["labelIndex"], 
+    pandas_preds["prediction"], 
+    rownames=["Actual"], 
+    colnames=["Predicted"]
+)
+
+plt.figure(figsize=(6, 5))
+sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", cbar=False)
+plt.title("Confusion Matrix (One-vs-Rest Logistic Regression)")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
